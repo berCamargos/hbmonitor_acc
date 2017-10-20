@@ -163,19 +163,25 @@ def parseDatas(datas, store=True):
 def plotDatas(datas, timeout = None, zoomplot = 10):
     mpu = datas[0]
     adc = datas[1]
-    fig = plt.figure()
-    if timeout != None:
-        timer = fig.canvas.new_timer(interval=3000)
-        timer.add_callback(plt.close)
+    if timeout == None:
+        fig = plt.figure()
+    #if timeout != None:
+    #    timer = fig.canvas.new_timer(interval=3000)
+    #    timer.add_callback(plt.close)
+    plt.clf()
     plt.subplot(3,1,1)
     plt.plot(adc[adc.index > (adc.index.max() - datetime.timedelta(seconds=zoomplot))])
+    plt.title(str(adc.index.max() - adc.index.min()))
     plt.subplot(3,1,2)
     plt.plot(mpu[mpu.index > (mpu.index.max() - datetime.timedelta(seconds=zoomplot))])
     plt.subplot(3,1,3)
     plt.plot(mpu)
-    if timeout != None:
-        timer.start()
-    plt.show()
+    #if timeout != None:
+    #    timer.start()
+    if timeout == None:
+        plt.show()
+    else:
+        plt.pause(timeout/1000)
 
 def plotContinous(record_time_s):
     starttime = time.time()
