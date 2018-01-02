@@ -129,29 +129,66 @@ def plotSomeBeats(N, splitData):
         plt.xlim([0, max_timestamp])
 
 def splitHB(x, datas, figname = ''):
+    global run_keeper
     PLOT_PARTIAL = False
     lastX = x[0]
     firstX = x[0]
     splitData = []
     final = []
-
-    plt_signal(datas, x, 30, 7)
-    plt.savefig(figname + '_zoom0', dpi=300)
-    plt.close()
-
-    plt_signal(datas, x, 7, 1)
-    plt.savefig(figname + '_zoom1', dpi=300)
-    plt.close()
-
-    plt_signal(datas, x, 1, None)
-    plt.savefig(figname + '_zoom2', dpi=300)
-    plt.close()
     
+    if not 'plt_signal' in run_keeper:
+        plt_signal(datas, x, 30, 7)
+        plt.savefig(figname + '_zoom0', dpi=300)
+        plt.close()
+
+        plt_signal(datas, x, 7, 1)
+        plt.savefig(figname + '_zoom1', dpi=300)
+        plt.close()
+
+        plt_signal(datas, x, 1, None)
+        plt.savefig(figname + '_zoom2', dpi=300)
+        plt.close()
+        run_keeper['plt_signal'] = True
+    
+    fig = plt.figure()
+    ax = fig.gca(projection='3d')
+    ax.plot(datas['acc_x'].values, datas['acc_y'].values, datas['acc_z'].values)
+    fig = plt.figure()
+    ax = fig.gca(projection='3d')
+    ax.plot(datas['gy_x'].values, datas['gy_y'].values, datas['gy_z'].values)
+
+    plt.figure()
+    plt.plot(datas[['acc_x', 'acc_y', 'acc_z']].values)
+
+    plt.show()
+
     #Data was resampled at 1000Hz
-    welch = sp.signal.welch(datas['acc_x'].values, fs = 1000, array=0)
-    print(datas['acc_x'])
-    print(welch)
-    fdjkls
+    #Need to get data after the initial nan sequence
+    welch_axis_acc = ['acc_x', 'acc_y', 'acc_z']
+    first_valid = np.where(np.isfinite(datas[welch_axis_acc].values))[0][0]
+    welch_data_acc = datas[welch_axis_acc].values[first_valid:]
+    welch_axis_gy = ['gy_x', 'gy_y', 'gy_z']
+    first_valid = np.where(np.isfinite(datas[welch_axis_gy].values))[0][0]
+    welch_data_gy = datas[welch_axis_gy].values[first_valid:]
+    f_acc,Pxx_den_acc = sp.signal.welch(welch_data_acc, fs = 1000, nperseg = 256*5, axis=0)
+    f_gy,Pxx_den_gy = sp.signal.welch(welch_data_gy, fs = 1000, nperseg = 256*5, axis=0)
+    # Signal is actually sampled at 200Hz
+    Pxx_den_acc = Pxx_den_acc[f_acc <= 100]
+    f_acc = f_acc[f_acc <= 100]
+    Pxx_den_gy = Pxx_den_gy[f_gy <= 100]
+    f_gy = f_gy[f_gy <= 100]
+    plt.figure()
+    plt.subplot(2,1,1)
+    plt.semilogy(f_acc, Pxx_den_acc)
+    plt.xlim([0,100])
+    plt.legend(welch_axis_acc)
+    plt.title('Spectral Density')
+    plt.subplot(2,1,2)
+    plt.semilogy(f_gy, Pxx_den_gy)
+    plt.xlim([0,100])
+    plt.legend(welch_axis_gy)
+    plt.savefig(figname + '_welch', dpi=300)
+    plt.close()
 
 
     targetcolumn = 'acc_x'
@@ -519,7 +556,8 @@ def calculatePos(accs, per, figname = '', plot = True):
 files = [['_test06_19_10_2017.h5'], ['_test05_19_10_2017.h5'], ['_test04_16_10_2017.h5'], ['_test03_15_10_2017.h5'], ['_test02_15_10_2017.h5'], ['_test01_15_10_2017.h5']]
 basefile = 'data/'
 baseimg  = 'plot/'
-SPLIT_NS = [1, 5, 10]
+#SPLIT_NS = [1, 5, 10]
+SPLIT_NS = [10]
 if not 'full_result_keeper' in locals():
     print("First RUN")
     full_result_keeper = {}
