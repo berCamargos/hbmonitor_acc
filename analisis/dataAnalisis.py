@@ -31,6 +31,11 @@ FIX_ROTATION        = True
 
 STORE_IMG           = True
 
+SAMPLING_RATE   = 200
+RESAMPLING_RATE = 1000
+FILTER = True
+LOW_CUT_FREQ = 1
+
 def detectHB(datas, figname = ''):
     rollingmean = datas['hb'].rolling('2S').mean()
     datas['hb'] -= rollingmean
@@ -79,9 +84,9 @@ def detectHB(datas, figname = ''):
 
 def plt_signal(datas, x, l0, l1):
     plt.figure()
-    acc_x = datas['acc_x']- datas['acc_x'].mean() 
-    acc_y = datas['acc_y']- datas['acc_y'].mean() 
-    acc_z = datas['acc_z']- datas['acc_z'].mean() 
+    acc_x = datas['acc_x']#- datas['acc_x'].mean() 
+    acc_y = datas['acc_y']#- datas['acc_y'].mean() 
+    acc_z = datas['acc_z']#- datas['acc_z'].mean() 
     plt.plot(datas.index, acc_x)
     plt.plot(datas.index, acc_y)
     plt.plot(datas.index, acc_z)
@@ -93,9 +98,9 @@ def plt_signal(datas, x, l0, l1):
         plt.xlim(x[central_hb], x[central_hb+l0])
         central_hb += math.floor(l0/2)
         indexs = (datas.index > x[central_hb]) & (datas.index <= x[central_hb+l0])
-        acc_x = datas['acc_x'][indexs]- datas['acc_x'][indexs].mean() 
-        acc_y = datas['acc_y'][indexs]- datas['acc_y'][indexs].mean() 
-        acc_z = datas['acc_z'][indexs]- datas['acc_z'][indexs].mean() 
+        acc_x = datas['acc_x'][indexs]#- datas['acc_x'][indexs].mean() 
+        acc_y = datas['acc_y'][indexs]#- datas['acc_y'][indexs].mean() 
+        acc_z = datas['acc_z'][indexs]#- datas['acc_z'][indexs].mean() 
     if l1 != None:
         if len(x) < (central_hb+l1):
             return
@@ -150,17 +155,16 @@ def splitHB(x, datas, figname = ''):
         plt.close()
         run_keeper['plt_signal'] = True
     
-    fig = plt.figure()
-    ax = fig.gca(projection='3d')
-    ax.plot(datas['acc_x'].values, datas['acc_y'].values, datas['acc_z'].values)
-    fig = plt.figure()
-    ax = fig.gca(projection='3d')
-    ax.plot(datas['gy_x'].values, datas['gy_y'].values, datas['gy_z'].values)
+    #fig = plt.figure()
+    #ax = fig.gca(projection='3d')
+    #ax.plot(datas['acc_x'].values, datas['acc_y'].values, datas['acc_z'].values)
+    #fig = plt.figure()
+    #ax = fig.gca(projection='3d')
+    #ax.plot(datas['gy_x'].values, datas['gy_y'].values, datas['gy_z'].values)
 
-    plt.figure()
-    plt.plot(datas[['acc_x', 'acc_y', 'acc_z']].values)
+    #plt.figure()
+    #plt.plot(datas[['acc_x', 'acc_y', 'acc_z']].values)
 
-    plt.show()
 
     #Data was resampled at 1000Hz
     #Need to get data after the initial nan sequence
@@ -170,8 +174,8 @@ def splitHB(x, datas, figname = ''):
     welch_axis_gy = ['gy_x', 'gy_y', 'gy_z']
     first_valid = np.where(np.isfinite(datas[welch_axis_gy].values))[0][0]
     welch_data_gy = datas[welch_axis_gy].values[first_valid:]
-    f_acc,Pxx_den_acc = sp.signal.welch(welch_data_acc, fs = 1000, nperseg = 256*5, axis=0)
-    f_gy,Pxx_den_gy = sp.signal.welch(welch_data_gy, fs = 1000, nperseg = 256*5, axis=0)
+    f_acc,Pxx_den_acc = sp.signal.welch(welch_data_acc, fs = RESAMPLING_RATE, nperseg = 256*5, axis=0)
+    f_gy,Pxx_den_gy = sp.signal.welch(welch_data_gy, fs = RESAMPLING_RATE, nperseg = 256*5, axis=0)
     # Signal is actually sampled at 200Hz
     Pxx_den_acc = Pxx_den_acc[f_acc <= 100]
     f_acc = f_acc[f_acc <= 100]
@@ -213,17 +217,17 @@ def splitHB(x, datas, figname = ''):
         #data.index *= gain
         data.index += firstX 
         #data = data.resample('5L').mean().bfill()
-        data = data - data.mean()
+        #data = data - data.mean()
         timelen = data.index.max() - data.index.min()
         if (timelen.microseconds < 1500000) and (len(data) < 1250):
             resAcc = data['acc_x'].pow(2) + data['acc_y'].pow(2) + data['acc_z'].pow(2)
             resAcc = resAcc.pow(1/2)
             if resAcc.sum() < 20000000:
                 if not KALMAN_ON_FULL_SET: 
-                    data = runKalmanOnSet(data, acc_fields, gy_fields, 1000, X, P)
+                    data = runKalmanOnSet(data, acc_fields, gy_fields, RESAMPLING_RATE, X, P)
                     euler_fields = ['e1','e2','e3']
                     data[acc_fields] = rotateAcc(np.asarray(data[acc_fields]), np.asarray(data[euler_fields]))
-                [pos, vel] = calculatePos(data[acc_fields], 1/1000, plot = False)
+                [pos, vel] = calculatePos(data[acc_fields], 1/RESAMPLING_RATE, plot = False)
                 pos = np.asarray(pos)
                 pos = pd.DataFrame(data=pos, index = data.index, columns = ['pos_x', 'pos_y', 'pos_z'])
                 dist = np.sqrt(np.sum(np.power(pos, 2), axis=1))
@@ -269,7 +273,7 @@ def splitHB(x, datas, figname = ''):
     ends = [data.index[-1] for data in splitData]
     indexs.append(min(starts) - datetime.timedelta(milliseconds = 500))
     indexs.append(max(ends) + datetime.timedelta(milliseconds = 500))
-    final = pd.DataFrame(data=finalList, index=indexs).resample("1L").interpolate()
+    final = pd.DataFrame(data=finalList, index=indexs).resample(str(int(1000/RESAMPLING_RATE)) + "L").interpolate()
     for data in splitData:
         N += 1
         if N < 2:
@@ -281,7 +285,7 @@ def splitHB(x, datas, figname = ''):
                 newfinal = pd.concat([data[column], final[finalcolumn]], axis=1).fillna(value=0).sum(axis=1)
                 finalList["final_"+column] = newfinal
             final = pd.DataFrame(data=finalList, index=finalList["final_"+column].index)
-            final -= final.mean()
+            #final -= final.mean()
         else:
             #In order to run a good crosscorrelation we should join them lets do it by padding with 0
             #data[targetcolumn] *= 0
@@ -318,7 +322,7 @@ def splitHB(x, datas, figname = ''):
                 newfinal = pd.concat([data[column], final[finalcolumn]], axis=1).fillna(value=0).sum(axis=1)
                 finalList["final_"+column] = newfinal
             final = pd.DataFrame(data=finalList, index=finalList["final_"+column].index)
-            final -= final.mean()
+            #final -= final.mean()
     N = 0
     mpus = ['acc_x', 'acc_y', 'acc_z', 'gy_x', 'gy_y', 'gy_z']
     c = ['r','b','g','k','y','c']
@@ -330,7 +334,7 @@ def splitHB(x, datas, figname = ''):
             for c_cntr, mpu in enumerate(mpus):
                 valids = pd.notnull(splitData[idx][mpu])
                 data = splitData[idx][mpu][valids]
-                data -= data.mean()
+                #data -= data.mean()
                 plt.plot(data.index, data, c[c_cntr] + '-')
             plt.title(str(idx))
             plt.subplot(2,1,2)
@@ -342,7 +346,7 @@ def splitHB(x, datas, figname = ''):
     for c_cntr, mpu in enumerate(mpus[:3]):
         valids = pd.notnull(final["final_"+mpu])
         acc_data = final["final_"+mpu][valids] 
-        acc_data -= acc_data.mean()
+        #acc_data -= acc_data.mean()
         final["final_"+mpu][valids] = acc_data
         plt.plot(acc_data.index, acc_data, c[c_cntr] + '-')
     columns = ["final_"+mpu for mpu in mpus[:3]]
@@ -352,7 +356,7 @@ def splitHB(x, datas, figname = ''):
     for c_cntr, mpu in enumerate(mpus[3:]):
         valids = pd.notnull(final["final_"+mpu])
         gy_data = final["final_"+mpu][valids] 
-        gy_data -= gy_data.mean()
+        #gy_data -= gy_data.mean()
         plt.plot(gy_data.index, gy_data, c[c_cntr] + '-')
     plt.title("gyroscope")
     if figname != '':
@@ -503,31 +507,52 @@ def calculatePos(accs, per, figname = '', plot = True):
     timestamps = np.asarray(range(len(accs)))
     timestamps = per*timestamps
     if USE_TRAPZ:
+        [b,a] = sp.signal.butter(5, LOW_CUT_FREQ/RESAMPLING_RATE/2, btype='highpass')
         vels = sp.integrate.cumtrapz(accs, x=timestamps, axis=0)
-        vels = np.append(vels, [[0, 0, 0]], axis = 0)
+        vels = np.append(vels, [vels[-1]], axis = 0)
+        if FILTER:
+            vels = sp.signal.filtfilt(b, a, vels.transpose()).transpose()
         vels[abs(vels) < 1e-16] = 0
         poss = sp.integrate.cumtrapz(vels, x=timestamps, axis=0)
-        poss = np.append(poss, [[0, 0, 0]], axis = 0)
+        poss = np.append(poss, [poss[-1]], axis = 0)
+        if FILTER:
+            poss = sp.signal.filtfilt(b, a, poss.transpose()).transpose()
+        poss[abs(vels) < 1e-16] = 0
     else:
-        vels = np.cumsum(accs, axis=0)/1000
-        poss = np.cumsum(vels, axis=0)/1000
+        vels = np.cumsum(accs, axis=0)/RESAMPLING_RATE
+        poss = np.cumsum(vels, axis=0)/RESAMPLING_RATE
 
     pos1 = [pos[0] for pos in poss]
     pos2 = [pos[1] for pos in poss]
     pos3 = [pos[2] for pos in poss]
     if plot:
         plt.figure()
+        plt.subplot(4,1,1)
+        plt.plot(accs)
+        plt.title('accs')
+
+
+        plt.subplot(4,1,2)
         plt.plot(vels)
         plt.title("vels")
+
+        plt.subplot(4,1,3)
+        plt.plot(np.power(vels, 2))
+        plt.title("vels^2")
+
+        plt.subplot(4,1,4)
+        plt.plot(np.power(vels, 2).sum(axis=1))
+        plt.title("vel_R^2")
+
         if figname != '':
-            plt.savefig(figname + '_final_vels', dpi=300)
+            plt.savefig(figname + '_vels', dpi=300)
             plt.close()
 
         plt.figure()
         plt.plot(poss)
         plt.title("pos")
         if figname != '':
-            plt.savefig(figname + '_final_pos', dpi=300)
+            plt.savefig(figname + '_pos', dpi=300)
             plt.close()
                 
         fig = plt.figure()
@@ -543,7 +568,7 @@ def calculatePos(accs, per, figname = '', plot = True):
         ax.set_zlim(min_lim, max_lim)
         plt.title("3d pos")
         if figname != '':
-            plt.savefig(figname + '_final_pos_3d', dpi=300)
+            plt.savefig(figname + '_pos_3d', dpi=300)
             plt.close()
     #for acc in accs:
     #    ax.plot([0, acc[0]], [0,acc[1]], [0,acc[2]], 'b->')
@@ -552,12 +577,10 @@ def calculatePos(accs, per, figname = '', plot = True):
     #    ax.plot([0, acc[0]], [0,acc[1]], [0,acc[2]], 'r->')
     return [poss, vels]
 
-
 files = [['_test06_19_10_2017.h5'], ['_test05_19_10_2017.h5'], ['_test04_16_10_2017.h5'], ['_test03_15_10_2017.h5'], ['_test02_15_10_2017.h5'], ['_test01_15_10_2017.h5']]
 basefile = 'data/'
 baseimg  = 'plot/'
-#SPLIT_NS = [1, 5, 10]
-SPLIT_NS = [10]
+SPLIT_NS = [1, 5, 10]
 if not 'full_result_keeper' in locals():
     print("First RUN")
     full_result_keeper = {}
@@ -580,6 +603,8 @@ for SPLIT_N in SPLIT_NS:
         if figname[0] == '_':
             figname = figname[1:]
         figname = baseimg + figname
+        if FILTER:
+            figname += '_filter'
         print('-'*100)
         print(figname)
 
@@ -589,7 +614,8 @@ for SPLIT_N in SPLIT_NS:
             keeper['hb'] = hb
         hb = keeper['hb']
         if not 'full_data' in keeper:
-            mpu = pd.read_hdf(f[1],'data').rename(columns={0:'acc_z', 1:'gy_x', 2:'gy_y', 3:'gy_z', 4:'acc_x', 5:'acc_y'})
+
+            mpu = pd.read_hdf(f[1],'data').rename(columns={0:'acc_z', 1:'gy_x', 2:'gy_y', 3:'gy_z', 4:'acc_x', 5:'acc_y'}).resample(str(int(1000/SAMPLING_RATE)) + 'L').mean().interpolate()
             constant_acc = 16384
             constant_gy = 131
             acc_fields = ['acc_x', 'acc_y', 'acc_z']
@@ -598,9 +624,17 @@ for SPLIT_N in SPLIT_NS:
                 mpu[acc_field] /= constant_acc
             for gy_field in gy_fields:
                 mpu[gy_field] /= constant_gy
+            #----FILTER----
+            if FILTER:
+                [b,a] = sp.signal.butter(2, LOW_CUT_FREQ/SAMPLING_RATE/2, btype='highpass')
+                for field in acc_fields+gy_fields:
+                    mpu[field] = sp.signal.filtfilt(b, a, mpu[field].values)
             #---------JOIN AND RESAMPLE---------------
-            full_data = pd.concat([mpu, hb.rename('hb')], axis=1, names=[0, 1, 2, 3, 4, 5, 6]).resample('1L').mean().interpolate()
+            full_data = pd.concat([mpu, hb.rename('hb')], axis=1, names=[0, 1, 2, 3, 4, 5, 6]).resample(str(int(1000/RESAMPLING_RATE)) + 'L').mean().interpolate()
             keeper['full_data'] = full_data
+
+
+
         full_data = keeper['full_data']
 
         step = (full_data.index[-1] - full_data.index[0])/SPLIT_N
@@ -637,7 +671,7 @@ for SPLIT_N in SPLIT_NS:
                 X = [0, 0, 0]
                 if KALMAN_ON_FULL_SET: 
                     if not 'kalman' in keeper:
-                        data = runKalmanOnSet(data, acc_fields, gy_fields, 1000, X, P)
+                        data = runKalmanOnSet(data, acc_fields, gy_fields, RESAMPLING_RATE, X, P)
                     euler_fields = ['e1','e2','e3']
                     data[acc_fields] = rotateAcc(np.asarray(data[acc_fields]), np.asarray(data[euler_fields]))
                 run_keeper['data'] = data
@@ -651,9 +685,13 @@ for SPLIT_N in SPLIT_NS:
             [x,y] = run_keeper['hb']
             if len(x) < 3:
                 continue
+            calculatePos(data[acc_fields], 1/RESAMPLING_RATE, figname = name_file)
             print("Calculating medium")
-            [acc_datas, gy_data] = splitHB(x, data, name_file)
-            calculatePos(acc_datas, 1/1000, figname = name_file)
+            if not 'split' in run_keeper:
+                [acc_datas, gy_data] = splitHB(x, data, name_file)
+                run_keeper['split'] = [acc_datas, gy_data]
+            [acc_datas, gy_data] = run_keeper['split']
+            calculatePos(acc_datas, 1/RESAMPLING_RATE, figname = name_file + '_final')
             if not STORE_IMG:
                 plt.show()
                 plt.close('all')
