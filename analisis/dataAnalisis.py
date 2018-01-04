@@ -34,7 +34,7 @@ STORE_IMG           = True
 SAMPLING_RATE   = 200
 RESAMPLING_RATE = 1000
 FILTER = True
-LOW_CUT_FREQ = 1
+LOW_CUT_FREQ = 0.5
 
 def detectHB(datas, figname = ''):
     rollingmean = datas['hb'].rolling('2S').mean()
@@ -500,14 +500,17 @@ def calculatePos(accs, per, figname = '', plot = True):
 
     #accs[np.isfinite(accs)] -= np.mean(accs[np.isfinite(accs)], axis=0)
     #accs -= np.nanmean(accs, axis=0)
-    accs = np.nan_to_num(accs)
+    #accs = np.nan_to_num(accs)
+    first_valid_index = np.where(np.isfinite(accs).all(axis=1))[0][0]
+    accs = accs[first_valid_index:]
     accs[abs(accs) < 1e-16] = 0
 
     pos = [0, 0, 0]
     timestamps = np.asarray(range(len(accs)))
     timestamps = per*timestamps
+    POS_VEL_LOW_CUT = 0.75
     if USE_TRAPZ:
-        [b,a] = sp.signal.butter(5, LOW_CUT_FREQ/RESAMPLING_RATE/2, btype='highpass')
+        [b,a] = sp.signal.iirdesign(0.5/RESAMPLING_RATE/2, 0.2/RESAMPLING_RATE/2, 0.01, 20)
         vels = sp.integrate.cumtrapz(accs, x=timestamps, axis=0)
         vels = np.append(vels, [vels[-1]], axis = 0)
         if FILTER:
@@ -543,10 +546,9 @@ def calculatePos(accs, per, figname = '', plot = True):
         plt.subplot(4,1,4)
         plt.plot(np.power(vels, 2).sum(axis=1))
         plt.title("vel_R^2")
-
         if figname != '':
             plt.savefig(figname + '_vels', dpi=300)
-            plt.close()
+            #plt.close()
 
         plt.figure()
         plt.plot(poss)
@@ -577,7 +579,8 @@ def calculatePos(accs, per, figname = '', plot = True):
     #    ax.plot([0, acc[0]], [0,acc[1]], [0,acc[2]], 'r->')
     return [poss, vels]
 
-files = [['_test06_19_10_2017.h5'], ['_test05_19_10_2017.h5'], ['_test04_16_10_2017.h5'], ['_test03_15_10_2017.h5'], ['_test02_15_10_2017.h5'], ['_test01_15_10_2017.h5']]
+files = [['_test06_19_10_2017.h5',150], ['_test05_19_10_2017.h5',150], ['_test04_16_10_2017.h5',250], ['_test03_15_10_2017.h5',100], ['_test02_15_10_2017.h5',100], ['_test01_15_10_2017.h5',0]]
+#files = [['_test02_15_10_2017.h5']]
 basefile = 'data/'
 baseimg  = 'plot/'
 SPLIT_NS = [1, 5, 10]
@@ -593,8 +596,8 @@ for SPLIT_N in SPLIT_NS:
         keeper = full_result_keeper[f[0]][SPLIT_N]
         
         if not 'files' in keeper:
-            if len(f) == 1:
-                f = [basefile + 'adc' + f[0], basefile + 'mpu' + f[0]]
+            if len(f) == 2:
+                f = [basefile + 'adc' + f[0], basefile + 'mpu' + f[0], f[1]]
             keeper['files'] = f
         f = keeper['files']
 
@@ -613,7 +616,7 @@ for SPLIT_N in SPLIT_NS:
             hb = hb - hb.mean()
             keeper['hb'] = hb
         hb = keeper['hb']
-        if not 'full_data' in keeper:
+        if not 'fulal_data' in keeper:
 
             mpu = pd.read_hdf(f[1],'data').rename(columns={0:'acc_z', 1:'gy_x', 2:'gy_y', 3:'gy_z', 4:'acc_x', 5:'acc_y'}).resample(str(int(1000/SAMPLING_RATE)) + 'L').mean().interpolate()
             constant_acc = 16384
@@ -624,9 +627,12 @@ for SPLIT_N in SPLIT_NS:
                 mpu[acc_field] /= constant_acc
             for gy_field in gy_fields:
                 mpu[gy_field] /= constant_gy
+            #----USE USER DEFINED OFFSET TO REMOVE FALTY DATA-----
+            mpu = mpu[f[2]:]
+
             #----FILTER----
             if FILTER:
-                [b,a] = sp.signal.butter(2, LOW_CUT_FREQ/SAMPLING_RATE/2, btype='highpass')
+                [b,a] = sp.signal.iirdesign(0.5/SAMPLING_RATE/2, 0.2/SAMPLING_RATE/2, 0.01, 20)
                 for field in acc_fields+gy_fields:
                     mpu[field] = sp.signal.filtfilt(b, a, mpu[field].values)
             #---------JOIN AND RESAMPLE---------------
@@ -686,6 +692,7 @@ for SPLIT_N in SPLIT_NS:
             if len(x) < 3:
                 continue
             calculatePos(data[acc_fields], 1/RESAMPLING_RATE, figname = name_file)
+            continue
             print("Calculating medium")
             if not 'split' in run_keeper:
                 [acc_datas, gy_data] = splitHB(x, data, name_file)
@@ -695,4 +702,5 @@ for SPLIT_N in SPLIT_NS:
             if not STORE_IMG:
                 plt.show()
                 plt.close('all')
-
+    plt.show()
+    fjdkal
