@@ -32,14 +32,14 @@ FIX_ROTATION        = True
 STORE_IMG           = True
 
 SAMPLING_RATE   = 200
-RESAMPLING_RATE = 1000
+RESAMPLING_RATE = 200
 FILTER = True
 LOW_CUT_FREQ = 0.5
 
 def detectHB(datas, figname = ''):
     rollingmean = datas['hb'].rolling('2S').mean()
     datas['hb'] -= rollingmean
-    [maxpeaks, minpeaks] = peakdetect.peakdetect(datas['hb'][pd.notnull(datas['hb'])], x_axis = datas.index[pd.notnull(datas['hb'])])
+    [maxpeaks, minpeaks] = peakdetect.peakdetect(datas['hb'][pd.notnull(datas['hb'])], x_axis = datas.index[pd.notnull(datas['hb'])], lookahead = int(math.floor(0.2*RESAMPLING_RATE)))
     rollingmin  = datas['hb'].rolling('2S').min()
     rollingmax  = datas['hb'].rolling('2S').max()
     rollinggain = rollingmax - rollingmin
@@ -53,9 +53,9 @@ def detectHB(datas, figname = ''):
     plt.figure()
     plt.plot(datas.index[pd.notnull(datas['hb'])], datas['hb'][pd.notnull(datas['hb'])], 'b-')
     plt.plot(x, datas['hb'][pd.notnull(datas['hb'])][x], 'ko')
-
-    plt.plot(x[1:], np.diff(datas['hb'][pd.notnull(datas['hb'])][x]), 'ro')
-    indexs = [True] + list(np.diff(datas['hb'][pd.notnull(datas['hb'])][x]) > -0.3)
+    diffs = np.diff(datas['hb'][pd.notnull(datas['hb'])][x])
+    plt.plot(x[1:], diffs, 'ro')
+    indexs = [True] + list(diffs > -0.3)
     x = x[indexs]
     y = y[indexs]
 
@@ -77,6 +77,7 @@ def detectHB(datas, figname = ''):
 
     plt.plot(x, datas['hb'][pd.notnull(datas['hb'])][x], 'rx')
     plt.gca().xaxis.set_major_formatter(matplotlib.dates.DateFormatter("%H:%M:%S.%f"))
+    plt.legend(['light senor signal', 'peak detection', 'peak diff', 'final beat detection'])
     if figname != '':
         plt.savefig(figname + '_hb', dpi=300)
         plt.close()
@@ -90,7 +91,7 @@ def plt_signal(datas, x, l0, l1):
     plt.plot(datas.index, acc_x)
     plt.plot(datas.index, acc_y)
     plt.plot(datas.index, acc_z)
-
+    legends = ['x','y','z']
     central_hb = 5
     if l0 != None:
         if len(x) < (central_hb+l0):
@@ -106,12 +107,14 @@ def plt_signal(datas, x, l0, l1):
             return
         plt.plot([x[central_hb], x[central_hb+l1]], [0,0], 'k-')
         plt.plot([x[central_hb], x[central_hb+l1]], [0,0], 'wo')
+        legends.append('heart beat')
 
     min_point = min([acc_x.min(), acc_y.min(), acc_z.min()])
     max_point = max([acc_x.max(), acc_y.max(), acc_z.max()])
     for hb in x:
         plt.plot([hb, hb], [min_point, max_point], 'g-')
     plt.ylim([min_point, max_point])
+    plt.legend(legends)
 
 def plotSomeBeats(N, splitData):
     plt.figure()
@@ -155,13 +158,19 @@ def splitHB(x, datas, figname = ''):
         plt.close()
         run_keeper['plt_signal'] = True
     
-    #fig = plt.figure()
-    #ax = fig.gca(projection='3d')
-    #ax.plot(datas['acc_x'].values, datas['acc_y'].values, datas['acc_z'].values)
-    #fig = plt.figure()
-    #ax = fig.gca(projection='3d')
-    #ax.plot(datas['gy_x'].values, datas['gy_y'].values, datas['gy_z'].values)
-
+        fig = plt.figure()
+        ax = fig.gca(projection='3d')
+        indexs = np.asarray(list(datas.index.astype(np.int64)))
+        indexs -= min(indexs)
+        indexs = indexs/max(indexs)
+        ax.scatter(datas['acc_x'].values, datas['acc_y'].values, datas['acc_z'].values, c = plt.cm.jet(indexs))
+        plt.savefig(figname + '_acc_hist', dpi=300)
+        plt.close()
+        fig = plt.figure()
+        ax = fig.gca(projection='3d')
+        ax.scatter(datas['gy_x'].values, datas['gy_y'].values, datas['gy_z'].values,  c = plt.cm.jet(indexs))
+        plt.savefig(figname + '_gy_hist', dpi=300)
+        plt.close()
     #plt.figure()
     #plt.plot(datas[['acc_x', 'acc_y', 'acc_z']].values)
 
@@ -195,7 +204,7 @@ def splitHB(x, datas, figname = ''):
     plt.close()
 
 
-    targetcolumn = 'acc_x'
+    targetcolumn = 'acc_z'
     N = 0
     M = 1
     mean_accs = []
@@ -206,23 +215,22 @@ def splitHB(x, datas, figname = ''):
     print("Calculating each beat")
     for index in x[1:]:
         data = datas[(datas.index < index) & (datas.index >= lastX)]
-        if len(data[pd.notnull(data['acc_x'])]) == 0:
+        if len(data[pd.notnull(data[targetcolumn])]) == 0:
             continue
-        first = data[pd.notnull(data['acc_x'])].index[0]
+        first = data[pd.notnull(data[targetcolumn])].index[0]
         data = data[data.index >= first]
         data.index -= data.index[0]
         # Lets make all beats have exactelly 5s
-        micro = data.index[-1].microseconds + data.index[-1].seconds*1000000
-        gain = (5000000/(micro))
         #data.index *= gain
         data.index += firstX 
         #data = data.resample('5L').mean().bfill()
         #data = data - data.mean()
         timelen = data.index.max() - data.index.min()
-        if (timelen.microseconds < 1500000) and (len(data) < 1250):
+        if (timelen.microseconds > 100000) and (timelen.microseconds < 1500000):
             resAcc = data['acc_x'].pow(2) + data['acc_y'].pow(2) + data['acc_z'].pow(2)
             resAcc = resAcc.pow(1/2)
-            if resAcc.sum() < 20000000:
+            resAcc = resAcc.sum()/len(resAcc)
+            if resAcc < 20000000: #????? when was this even close to true ??????
                 if not KALMAN_ON_FULL_SET: 
                     data = runKalmanOnSet(data, acc_fields, gy_fields, RESAMPLING_RATE, X, P)
                     euler_fields = ['e1','e2','e3']
@@ -271,9 +279,11 @@ def splitHB(x, datas, figname = ''):
     print("Join them")
     starts = [data.index[0] for data in splitData]
     ends = [data.index[-1] for data in splitData]
-    indexs.append(min(starts) - datetime.timedelta(milliseconds = 500))
-    indexs.append(max(ends) + datetime.timedelta(milliseconds = 500))
-    final = pd.DataFrame(data=finalList, index=indexs).resample(str(int(1000/RESAMPLING_RATE)) + "L").interpolate()
+    indexs.append(min(starts) - datetime.timedelta(milliseconds = RESAMPLING_RATE/2))
+    indexs.append(max(ends) + datetime.timedelta(milliseconds = RESAMPLING_RATE/2))
+    final = pd.DataFrame(data=finalList, index=indexs).resample(str(int(1000/RESAMPLING_RATE)) + "L").mean().interpolate()
+    print(final)
+    PLOT_PARTIAL = False
     for data in splitData:
         N += 1
         if N < 2:
@@ -298,7 +308,9 @@ def splitHB(x, datas, figname = ''):
                 plt.plot(data.index, data[targetcolumn], "b-")
             if len(final["final_"+targetcolumn]) > len(data[targetcolumn]):
                 corr = sp.signal.correlate(final["final_"+targetcolumn], data[targetcolumn])
-                offset_ms = corr.argmax() - len(data[targetcolumn]) + 1 - ((data.index[0] - final.index[0]).microseconds/1000)
+                corr_offset = (corr.argmax() - len(data[targetcolumn]) + 1)/RESAMPLING_RATE #In seconds
+                corr_offset *= 1000 #ms
+                offset_ms = corr_offset - ((data.index[0] - final.index[0]).microseconds/1000)
                 offset_ms *= 1
                 if offset_ms == 0:
                     subdir = 1
@@ -306,8 +318,8 @@ def splitHB(x, datas, figname = ''):
                     subdir = offset_ms/abs(offset_ms)
             else:
                 corr = sp.signal.correlate(data[targetcolumn], final["final_"+targetcolumn])
-                offset_ms = corr.argmax() - len(final["final_"+targetcolumn]) + 1
-                offset_ms *= 1
+                offset_ms = (corr.argmax() - len(final["final_"+targetcolumn]) + 1)/RESAMPLING_RATE
+                offset_ms *= 1000 #ms
                 subdir = -1*(offset_ms/abs(offset_ms))
             data.index += subdir*datetime.timedelta(milliseconds = abs(int(offset_ms)))
             if PLOT_PARTIAL:
@@ -351,6 +363,8 @@ def splitHB(x, datas, figname = ''):
         plt.plot(acc_data.index, acc_data, c[c_cntr] + '-')
     columns = ["final_"+mpu for mpu in mpus[:3]]
     acc_datas = np.asarray(final[columns])
+    print(mpus[:3])
+    plt.legend(['x','y','z'])
     plt.title("accelerometer")
     plt.subplot(2,1,2)
     for c_cntr, mpu in enumerate(mpus[3:]):
@@ -358,7 +372,9 @@ def splitHB(x, datas, figname = ''):
         gy_data = final["final_"+mpu][valids] 
         #gy_data -= gy_data.mean()
         plt.plot(gy_data.index, gy_data, c[c_cntr] + '-')
+    plt.legend(['x','y','z'])
     plt.title("gyroscope")
+
     if figname != '':
         plt.savefig(figname + '_final_mean', dpi=300)
         plt.close()
@@ -548,7 +564,7 @@ def calculatePos(accs, per, figname = '', plot = True):
         plt.title("vel_R^2")
         if figname != '':
             plt.savefig(figname + '_vels', dpi=300)
-            #plt.close()
+            plt.close()
 
         plt.figure()
         plt.plot(poss)
@@ -616,7 +632,7 @@ for SPLIT_N in SPLIT_NS:
             hb = hb - hb.mean()
             keeper['hb'] = hb
         hb = keeper['hb']
-        if not 'fulal_data' in keeper:
+        if not 'full_data' in keeper:
 
             mpu = pd.read_hdf(f[1],'data').rename(columns={0:'acc_z', 1:'gy_x', 2:'gy_y', 3:'gy_z', 4:'acc_x', 5:'acc_y'}).resample(str(int(1000/SAMPLING_RATE)) + 'L').mean().interpolate()
             constant_acc = 16384
@@ -692,9 +708,8 @@ for SPLIT_N in SPLIT_NS:
             if len(x) < 3:
                 continue
             calculatePos(data[acc_fields], 1/RESAMPLING_RATE, figname = name_file)
-            continue
             print("Calculating medium")
-            if not 'split' in run_keeper:
+            if not 'spliat' in run_keeper:
                 [acc_datas, gy_data] = splitHB(x, data, name_file)
                 run_keeper['split'] = [acc_datas, gy_data]
             [acc_datas, gy_data] = run_keeper['split']
