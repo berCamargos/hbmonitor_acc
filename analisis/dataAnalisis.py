@@ -22,7 +22,8 @@ params = {'legend.fontsize':    size_things,
          'axes.labelsize':      size_things,
          'axes.titlesize':      size_things,
          'xtick.labelsize':     size_things,
-         'ytick.labelsize':     size_things}
+         'ytick.labelsize':     size_things,
+         'text.usetex':         True}
 matplotlib.pylab.rcParams.update(params)
 
 KALMAN_ON_FULL_SET  = True
@@ -31,15 +32,16 @@ FIX_ROTATION        = True
 
 STORE_IMG           = True
 
-SAMPLING_RATE   = 200
-RESAMPLING_RATE = 200
+SAMPLING_FREQ   = 200
+OLD_SAMPLING_FREQ   = 1000
+RESAMPLING_FREQ = 200
 FILTER = True
 LOW_CUT_FREQ = 0.5
 
 def detectHB(datas, figname = ''):
     rollingmean = datas['hb'].rolling('2S').mean()
     datas['hb'] -= rollingmean
-    [maxpeaks, minpeaks] = peakdetect.peakdetect(datas['hb'][pd.notnull(datas['hb'])], x_axis = datas.index[pd.notnull(datas['hb'])], lookahead = int(math.floor(0.2*RESAMPLING_RATE)))
+    [maxpeaks, minpeaks] = peakdetect.peakdetect(datas['hb'][pd.notnull(datas['hb'])], x_axis = datas.index[pd.notnull(datas['hb'])], lookahead = int(math.floor(0.2*RESAMPLING_FREQ)))
     rollingmin  = datas['hb'].rolling('2S').min()
     rollingmax  = datas['hb'].rolling('2S').max()
     rollinggain = rollingmax - rollingmin
@@ -79,7 +81,7 @@ def detectHB(datas, figname = ''):
     plt.gca().xaxis.set_major_formatter(matplotlib.dates.DateFormatter("%H:%M:%S.%f"))
     plt.legend(['light senor signal', 'peak detection', 'peak diff', 'final beat detection'])
     if figname != '':
-        plt.savefig(figname + '_hb', dpi=300)
+        plt.savefig(figname + '_hb', dpi=1000)
         plt.close()
     return [x,y]
 
@@ -92,26 +94,27 @@ def plt_signal(datas, x, l0, l1):
     plt.plot(datas.index, acc_y)
     plt.plot(datas.index, acc_z)
     legends = ['x','y','z']
-    central_hb = 5
+    central_hb = int(math.floor(len(x)/2))
     if l0 != None:
         if len(x) < (central_hb+l0):
             return
-        plt.xlim(x[central_hb], x[central_hb+l0])
-        central_hb += math.floor(l0/2)
-        indexs = (datas.index > x[central_hb]) & (datas.index <= x[central_hb+l0])
+        plt.xlim(x[central_hb-l0], x[central_hb+l0])
+        indexs = (datas.index > x[central_hb-l0]) & (datas.index <= x[central_hb+l0])
         acc_x = datas['acc_x'][indexs]#- datas['acc_x'][indexs].mean() 
         acc_y = datas['acc_y'][indexs]#- datas['acc_y'][indexs].mean() 
         acc_z = datas['acc_z'][indexs]#- datas['acc_z'][indexs].mean() 
+    else:
+        l0 = int(math.floor(len(x)/2))
     if l1 != None:
         if len(x) < (central_hb+l1):
             return
-        plt.plot([x[central_hb], x[central_hb+l1]], [0,0], 'k-')
-        plt.plot([x[central_hb], x[central_hb+l1]], [0,0], 'wo')
+        plt.plot([x[central_hb-l1], x[central_hb+l1]], [0,0], 'k-')
+        plt.plot([x[central_hb-l1], x[central_hb+l1]], [0,0], 'wo')
         legends.append('heart beat')
 
     min_point = min([acc_x.min(), acc_y.min(), acc_z.min()])
     max_point = max([acc_x.max(), acc_y.max(), acc_z.max()])
-    for hb in x:
+    for hb in x[central_hb-l0:(central_hb+l0)]:
         plt.plot([hb, hb], [min_point, max_point], 'g-')
     plt.ylim([min_point, max_point])
     plt.legend(legends)
@@ -145,25 +148,26 @@ def splitHB(x, datas, figname = ''):
     final = []
     
     if not 'plt_signal' in run_keeper:
-        plt_signal(datas, x, 30, 7)
+        plt_signal(datas, x, 15, 3)
         plt.savefig(figname + '_zoom0', dpi=300)
         plt.close()
 
-        plt_signal(datas, x, 7, 1)
+        plt_signal(datas, x, 3, 1)
         plt.savefig(figname + '_zoom1', dpi=300)
         plt.close()
 
         plt_signal(datas, x, 1, None)
         plt.savefig(figname + '_zoom2', dpi=300)
         plt.close()
-        run_keeper['plt_signal'] = True
     
         fig = plt.figure()
         ax = fig.gca(projection='3d')
         indexs = np.asarray(list(datas.index.astype(np.int64)))
         indexs -= min(indexs)
         indexs = indexs/max(indexs)
-        ax.scatter(datas['acc_x'].values, datas['acc_y'].values, datas['acc_z'].values, c = plt.cm.jet(indexs))
+        scatter = ax.scatter(datas['acc_x'].values, datas['acc_y'].values, datas['acc_z'].values, c = plt.cm.jet(indexs))
+        #fig.colorbar(scatter)
+        #plt.show()
         plt.savefig(figname + '_acc_hist', dpi=300)
         plt.close()
         fig = plt.figure()
@@ -171,6 +175,7 @@ def splitHB(x, datas, figname = ''):
         ax.scatter(datas['gy_x'].values, datas['gy_y'].values, datas['gy_z'].values,  c = plt.cm.jet(indexs))
         plt.savefig(figname + '_gy_hist', dpi=300)
         plt.close()
+        run_keeper['plt_signal'] = True
     #plt.figure()
     #plt.plot(datas[['acc_x', 'acc_y', 'acc_z']].values)
 
@@ -183,22 +188,23 @@ def splitHB(x, datas, figname = ''):
     welch_axis_gy = ['gy_x', 'gy_y', 'gy_z']
     first_valid = np.where(np.isfinite(datas[welch_axis_gy].values))[0][0]
     welch_data_gy = datas[welch_axis_gy].values[first_valid:]
-    f_acc,Pxx_den_acc = sp.signal.welch(welch_data_acc, fs = RESAMPLING_RATE, nperseg = 256*5, axis=0)
-    f_gy,Pxx_den_gy = sp.signal.welch(welch_data_gy, fs = RESAMPLING_RATE, nperseg = 256*5, axis=0)
-    # Signal is actually sampled at 200Hz
-    Pxx_den_acc = Pxx_den_acc[f_acc <= 100]
-    f_acc = f_acc[f_acc <= 100]
-    Pxx_den_gy = Pxx_den_gy[f_gy <= 100]
-    f_gy = f_gy[f_gy <= 100]
+    f_acc,Pxx_den_acc = sp.signal.welch(welch_data_acc, fs = RESAMPLING_FREQ, nperseg = 256*5, axis=0)
+    f_gy,Pxx_den_gy = sp.signal.welch(welch_data_gy, fs = RESAMPLING_FREQ, nperseg = 256*5, axis=0)
+    
+    lim_freq = RESAMPLING_FREQ/2
+    Pxx_den_acc = Pxx_den_acc[f_acc <= lim_freq]
+    f_acc = f_acc[f_acc <= lim_freq]
+    Pxx_den_gy = Pxx_den_gy[f_gy <= lim_freq]
+    f_gy = f_gy[f_gy <= lim_freq]
     plt.figure()
     plt.subplot(2,1,1)
     plt.semilogy(f_acc, Pxx_den_acc)
-    plt.xlim([0,100])
+    plt.xlim([0,lim_freq])
     plt.legend(welch_axis_acc)
     plt.title('Spectral Density')
     plt.subplot(2,1,2)
     plt.semilogy(f_gy, Pxx_den_gy)
-    plt.xlim([0,100])
+    plt.xlim([0,lim_freq])
     plt.legend(welch_axis_gy)
     plt.savefig(figname + '_welch', dpi=300)
     plt.close()
@@ -232,10 +238,10 @@ def splitHB(x, datas, figname = ''):
             resAcc = resAcc.sum()/len(resAcc)
             if resAcc < 20000000: #????? when was this even close to true ??????
                 if not KALMAN_ON_FULL_SET: 
-                    data = runKalmanOnSet(data, acc_fields, gy_fields, RESAMPLING_RATE, X, P)
+                    data = runKalmanOnSet(data, acc_fields, gy_fields, RESAMPLING_FREQ, X, P)
                     euler_fields = ['e1','e2','e3']
                     data[acc_fields] = rotateAcc(np.asarray(data[acc_fields]), np.asarray(data[euler_fields]))
-                [pos, vel] = calculatePos(data[acc_fields], 1/RESAMPLING_RATE, plot = False)
+                [pos, vel] = calculatePos(data[acc_fields], 1/RESAMPLING_FREQ, plot = False)
                 pos = np.asarray(pos)
                 pos = pd.DataFrame(data=pos, index = data.index, columns = ['pos_x', 'pos_y', 'pos_z'])
                 dist = np.sqrt(np.sum(np.power(pos, 2), axis=1))
@@ -279,9 +285,9 @@ def splitHB(x, datas, figname = ''):
     print("Join them")
     starts = [data.index[0] for data in splitData]
     ends = [data.index[-1] for data in splitData]
-    indexs.append(min(starts) - datetime.timedelta(milliseconds = RESAMPLING_RATE/2))
-    indexs.append(max(ends) + datetime.timedelta(milliseconds = RESAMPLING_RATE/2))
-    final = pd.DataFrame(data=finalList, index=indexs).resample(str(int(1000/RESAMPLING_RATE)) + "L").mean().interpolate()
+    indexs.append(min(starts) - datetime.timedelta(milliseconds = (1000*1/RESAMPLING_FREQ)/2))
+    indexs.append(max(ends) + datetime.timedelta(milliseconds = (1000*1/RESAMPLING_FREQ)/2))
+    final = pd.DataFrame(data=finalList, index=indexs).resample(str(int(1000*1/RESAMPLING_FREQ)) + "L").mean().interpolate()
     print(final)
     PLOT_PARTIAL = False
     for data in splitData:
@@ -308,7 +314,7 @@ def splitHB(x, datas, figname = ''):
                 plt.plot(data.index, data[targetcolumn], "b-")
             if len(final["final_"+targetcolumn]) > len(data[targetcolumn]):
                 corr = sp.signal.correlate(final["final_"+targetcolumn], data[targetcolumn])
-                corr_offset = (corr.argmax() - len(data[targetcolumn]) + 1)/RESAMPLING_RATE #In seconds
+                corr_offset = (corr.argmax() - len(data[targetcolumn]) + 1)/RESAMPLING_FREQ #In seconds
                 corr_offset *= 1000 #ms
                 offset_ms = corr_offset - ((data.index[0] - final.index[0]).microseconds/1000)
                 offset_ms *= 1
@@ -318,7 +324,7 @@ def splitHB(x, datas, figname = ''):
                     subdir = offset_ms/abs(offset_ms)
             else:
                 corr = sp.signal.correlate(data[targetcolumn], final["final_"+targetcolumn])
-                offset_ms = (corr.argmax() - len(final["final_"+targetcolumn]) + 1)/RESAMPLING_RATE
+                offset_ms = (corr.argmax() - len(final["final_"+targetcolumn]) + 1)/RESAMPLING_FREQ
                 offset_ms *= 1000 #ms
                 subdir = -1*(offset_ms/abs(offset_ms))
             data.index += subdir*datetime.timedelta(milliseconds = abs(int(offset_ms)))
@@ -378,7 +384,7 @@ def splitHB(x, datas, figname = ''):
     if figname != '':
         plt.savefig(figname + '_final_mean', dpi=300)
         plt.close()
-    return [acc_datas, gy_data]
+    return final
 
 def convertToQuartenions(acc, gy):
     fz = acc[0];
@@ -526,7 +532,7 @@ def calculatePos(accs, per, figname = '', plot = True):
     timestamps = per*timestamps
     POS_VEL_LOW_CUT = 0.75
     if USE_TRAPZ:
-        [b,a] = sp.signal.iirdesign(0.5/RESAMPLING_RATE/2, 0.2/RESAMPLING_RATE/2, 0.01, 20)
+        [b,a] = sp.signal.iirdesign(0.5/RESAMPLING_FREQ/2, 0.2/RESAMPLING_FREQ/2, 0.01, 20)
         vels = sp.integrate.cumtrapz(accs, x=timestamps, axis=0)
         vels = np.append(vels, [vels[-1]], axis = 0)
         if FILTER:
@@ -538,8 +544,8 @@ def calculatePos(accs, per, figname = '', plot = True):
             poss = sp.signal.filtfilt(b, a, poss.transpose()).transpose()
         poss[abs(vels) < 1e-16] = 0
     else:
-        vels = np.cumsum(accs, axis=0)/RESAMPLING_RATE
-        poss = np.cumsum(vels, axis=0)/RESAMPLING_RATE
+        vels = np.cumsum(accs, axis=0)/RESAMPLING_FREQ
+        poss = np.cumsum(vels, axis=0)/RESAMPLING_FREQ
 
     pos1 = [pos[0] for pos in poss]
     pos2 = [pos[1] for pos in poss]
@@ -550,24 +556,26 @@ def calculatePos(accs, per, figname = '', plot = True):
         plt.plot(accs)
         plt.title('accs')
 
-
         plt.subplot(4,1,2)
-        plt.plot(vels)
+        plt.plot(accs.index, vels)
         plt.title("vels")
 
         plt.subplot(4,1,3)
-        plt.plot(np.power(vels, 2))
-        plt.title("vels^2")
+        plt.plot(accs.index, np.power(vels, 2))
+        plt.legend(['x','y','z'])
+        plt.title(r"vels^2")
 
         plt.subplot(4,1,4)
-        plt.plot(np.power(vels, 2).sum(axis=1))
-        plt.title("vel_R^2")
+        plt.plot(accs.index, np.power(vels, 2).sum(axis=1))
+        plt.title(r"vel_R^2")
+        plt.tight_layout()
         if figname != '':
             plt.savefig(figname + '_vels', dpi=300)
             plt.close()
 
         plt.figure()
-        plt.plot(poss)
+        plt.plot(accs.index, poss)
+        plt.legend(['x','y','z'])
         plt.title("pos")
         if figname != '':
             plt.savefig(figname + '_pos', dpi=300)
@@ -576,14 +584,19 @@ def calculatePos(accs, per, figname = '', plot = True):
         fig = plt.figure()
         ax = fig.gca(projection='3d')
         ax.plot(pos1, pos2, pos3, 'b-')
-        ax.plot([pos1[ 0]], [pos2[ 0]], [pos3[ 0]], 'ro')
-        ax.plot([pos1[-1]], [pos2[-1]], [pos3[-1]], 'rx')
+        indexs = np.asarray(list(accs.index.astype(np.int64)))
+        indexs -= min(indexs)
+        indexs = indexs/max(indexs)
+        ax.scatter(pos1, pos2, pos3, c = plt.cm.jet(indexs))
+        ax.plot([pos1[ 0]], [pos2[ 0]], [pos3[ 0]], 'ro', label = 'start')
+        ax.plot([pos1[-1]], [pos2[-1]], [pos3[-1]], 'rx', label='end')
         lim = 0.001
         max_lim = max([max(pos1), max(pos2), max(pos3)])
         min_lim = min([min(pos1), min(pos2), min(pos3)])
         ax.set_xlim(min_lim, max_lim)
         ax.set_ylim(min_lim, max_lim)
         ax.set_zlim(min_lim, max_lim)
+        plt.legend()
         plt.title("3d pos")
         if figname != '':
             plt.savefig(figname + '_pos_3d', dpi=300)
@@ -596,8 +609,10 @@ def calculatePos(accs, per, figname = '', plot = True):
     return [poss, vels]
 
 files = [['_test06_19_10_2017.h5',150], ['_test05_19_10_2017.h5',150], ['_test04_16_10_2017.h5',250], ['_test03_15_10_2017.h5',100], ['_test02_15_10_2017.h5',100], ['_test01_15_10_2017.h5',0]]
-#files = [['_test02_15_10_2017.h5']]
 basefile = 'data/'
+files = [['buffer_2017-05-09_00.11.36',0, 'exercicio_old_01']]
+basefile = 'data_old/'
+#files = [['_test02_15_10_2017.h5']]
 baseimg  = 'plot/'
 SPLIT_NS = [1, 5, 10]
 if not 'full_result_keeper' in locals():
@@ -612,33 +627,69 @@ for SPLIT_N in SPLIT_NS:
         keeper = full_result_keeper[f[0]][SPLIT_N]
         
         if not 'files' in keeper:
-            if len(f) == 2:
+            if f[0][-2:] == 'h5':
+                file_type = 'h5'
                 f = [basefile + 'adc' + f[0], basefile + 'mpu' + f[0], f[1]]
+                figname = f[0].split('adc')[1].split('.')[0]
+                if figname[0] == '_':
+                    figname = figname[1:]
+            else:
+                file_type = 'old'
+                date_part = f[0].split('_',1)[1]
+                figname = f[2]
+                f = [basefile + 'bufferADC_' + date_part, basefile + f[0], f[1]]
+            print(f)
             keeper['files'] = f
         f = keeper['files']
 
         #------LOAD AND FIX HB DATA--------------------
-        figname = f[0].split('adc')[1].split('.')[0]
-        if figname[0] == '_':
-            figname = figname[1:]
+
         figname = baseimg + figname
         if FILTER:
             figname += '_filter'
+        figname += '_res' + str(RESAMPLING_FREQ)
         print('-'*100)
         print(figname)
 
         if not 'hb' in keeper:
-            hb = pd.read_hdf(f[0],'data').rename('hb')
+            if file_type == 'h5':
+                hb = pd.read_hdf(f[0],'data').rename('hb')
+                hb = pd.DataFrame(data = hb, index = hb.index, columns = ['hb'])
+            else:
+                HB_PERIOD_S = 0.1
+                raw_hb = open(f[0], 'rb').read()
+                hb = []
+                for i in range(math.floor(len(raw_hb)/2)):
+                    hb.append(struct.unpack('<H', raw_hb[i*2:i*2+2])[0])
+                hb = np.asarray(hb)
+                hb_index = pd.date_range(date_part.split('_')[0], periods = len(hb), freq='100L')
+                hb = pd.DataFrame(data = hb, index = hb_index, columns = ['hb'])
             hb = hb - hb.mean()
             keeper['hb'] = hb
         hb = keeper['hb']
         if not 'full_data' in keeper:
-
-            mpu = pd.read_hdf(f[1],'data').rename(columns={0:'acc_z', 1:'gy_x', 2:'gy_y', 3:'gy_z', 4:'acc_x', 5:'acc_y'}).resample(str(int(1000/SAMPLING_RATE)) + 'L').mean().interpolate()
-            constant_acc = 16384
-            constant_gy = 131
             acc_fields = ['acc_x', 'acc_y', 'acc_z']
             gy_fields = ['gy_x', 'gy_y', 'gy_z']
+            if file_type == 'h5':
+                SAMPLING_FREQ = SAMPLING_FREQ
+                mpu = pd.read_hdf(f[1],'data').rename(columns={0:'acc_z', 1:'gy_x', 2:'gy_y', 3:'gy_z', 4:'acc_x', 5:'acc_y'}).resample(str(int(1000/SAMPLING_FREQ)) + 'L').mean().interpolate()
+            else:
+                SAMPLING_FREQ = OLD_SAMPLING_FREQ
+                mpu_raw = open(f[1], 'rb').read()
+                mpu = []
+                for i in range(math.floor(len(mpu_raw)/(6*2))):
+                    data_point = []
+                    for mpu_index in range(6):
+                        index = i*(6*2) + mpu_index*2
+                        data_point.append(struct.unpack('>h', mpu_raw[index:index+2])[0])
+                    mpu.append(data_point)
+                mpu = np.asarray(mpu)
+                mpu_index = pd.date_range(date_part.split('_')[0], periods = len(mpu), freq='1L')
+                mpu = pd.DataFrame(data=mpu, index= mpu_index, columns = acc_fields + gy_fields)
+
+            constant_acc = 16384
+            constant_gy = 131
+
             for acc_field in acc_fields:
                 mpu[acc_field] /= constant_acc
             for gy_field in gy_fields:
@@ -648,11 +699,12 @@ for SPLIT_N in SPLIT_NS:
 
             #----FILTER----
             if FILTER:
-                [b,a] = sp.signal.iirdesign(0.5/SAMPLING_RATE/2, 0.2/SAMPLING_RATE/2, 0.01, 20)
+                #apply a high pass of passband of 0.5Hz and stop band of 0.2Hz
+                [b,a] = sp.signal.iirdesign(0.5/SAMPLING_FREQ/2, 0.2/SAMPLING_FREQ/2, 0.01, 20)
                 for field in acc_fields+gy_fields:
                     mpu[field] = sp.signal.filtfilt(b, a, mpu[field].values)
             #---------JOIN AND RESAMPLE---------------
-            full_data = pd.concat([mpu, hb.rename('hb')], axis=1, names=[0, 1, 2, 3, 4, 5, 6]).resample(str(int(1000/RESAMPLING_RATE)) + 'L').mean().interpolate()
+            full_data = pd.concat([mpu, hb], axis=1, names=[0, 1, 2, 3, 4, 5, 6]).resample(str(int(1000/RESAMPLING_FREQ)) + 'L').mean().interpolate()
             keeper['full_data'] = full_data
 
 
@@ -693,7 +745,7 @@ for SPLIT_N in SPLIT_NS:
                 X = [0, 0, 0]
                 if KALMAN_ON_FULL_SET: 
                     if not 'kalman' in keeper:
-                        data = runKalmanOnSet(data, acc_fields, gy_fields, RESAMPLING_RATE, X, P)
+                        data = runKalmanOnSet(data, acc_fields, gy_fields, RESAMPLING_FREQ, X, P)
                     euler_fields = ['e1','e2','e3']
                     data[acc_fields] = rotateAcc(np.asarray(data[acc_fields]), np.asarray(data[euler_fields]))
                 run_keeper['data'] = data
@@ -707,15 +759,16 @@ for SPLIT_N in SPLIT_NS:
             [x,y] = run_keeper['hb']
             if len(x) < 3:
                 continue
-            calculatePos(data[acc_fields], 1/RESAMPLING_RATE, figname = name_file)
+            calculatePos(data[acc_fields], 1/RESAMPLING_FREQ, figname = name_file)
             print("Calculating medium")
             if not 'spliat' in run_keeper:
-                [acc_datas, gy_data] = splitHB(x, data, name_file)
-                run_keeper['split'] = [acc_datas, gy_data]
-            [acc_datas, gy_data] = run_keeper['split']
-            calculatePos(acc_datas, 1/RESAMPLING_RATE, figname = name_file + '_final')
+                final = splitHB(x, data, name_file)
+                run_keeper['split'] = final
+                print(final)
+            final = run_keeper['split']
+            final_acc_fields = ['final_' + acc_field for acc_field in acc_fields]
+            print(final_acc_fields)
+            calculatePos(final[final_acc_fields], 1/RESAMPLING_FREQ, figname = name_file + '_final')
             if not STORE_IMG:
                 plt.show()
                 plt.close('all')
-    plt.show()
-    fjdkal
