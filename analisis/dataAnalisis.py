@@ -23,16 +23,21 @@ params = {'legend.fontsize':    size_things,
          'axes.titlesize':      size_things,
          'xtick.labelsize':     size_things,
          'ytick.labelsize':     size_things,
-         'text.usetex':         True}
+         'axes.facecolor':      'white',
+         'figure.facecolor':    'white',
+         'grid.color':          'k',
+         'grid.linewidth':      0.1,
+         'text.usetex':         False,
+         'figure.figsize': [12.8, 4.8]}
 matplotlib.pylab.rcParams.update(params)
 
 KALMAN_ON_FULL_SET  = True
 USE_TRAPZ           = True
-FIX_ROTATION        = True
+FIX_ROTATION        = False
 
 STORE_IMG           = True
 
-SAMPLING_FREQ   = 200
+NEW_SAMPLING_FREQ   = 200
 OLD_SAMPLING_FREQ   = 1000
 RESAMPLING_FREQ = 200
 FILTER = True
@@ -87,37 +92,57 @@ def detectHB(datas, figname = ''):
 
 def plt_signal(datas, x, l0, l1):
     plt.figure()
-    acc_x = datas['acc_x']#- datas['acc_x'].mean() 
-    acc_y = datas['acc_y']#- datas['acc_y'].mean() 
-    acc_z = datas['acc_z']#- datas['acc_z'].mean() 
-    plt.plot(datas.index, acc_x)
-    plt.plot(datas.index, acc_y)
-    plt.plot(datas.index, acc_z)
-    legends = ['x','y','z']
     central_hb = int(math.floor(len(x)/2))
     if l0 != None:
         if len(x) < (central_hb+l0):
             return
-        plt.xlim(x[central_hb-l0], x[central_hb+l0])
+        #plt.xlim(x[central_hb-l0], x[central_hb+l0])
         indexs = (datas.index > x[central_hb-l0]) & (datas.index <= x[central_hb+l0])
-        acc_x = datas['acc_x'][indexs]#- datas['acc_x'][indexs].mean() 
-        acc_y = datas['acc_y'][indexs]#- datas['acc_y'][indexs].mean() 
-        acc_z = datas['acc_z'][indexs]#- datas['acc_z'][indexs].mean() 
     else:
         l0 = int(math.floor(len(x)/2))
+        indexs = (datas.index > x[central_hb-l0]) & (datas.index <= x[central_hb+l0])
+    acc_x = datas['acc_x'][indexs]#- datas['acc_x'][indexs].mean() 
+    acc_y = datas['acc_y'][indexs]#- datas['acc_y'][indexs].mean() 
+    acc_z = datas['acc_z'][indexs]#- datas['acc_z'][indexs].mean() 
+    gy_x = datas['gy_x'][indexs]#- datas['acc_x'][indexs].mean() 
+    gy_y = datas['gy_y'][indexs]#- datas['acc_y'][indexs].mean() 
+    gy_z = datas['gy_z'][indexs]#- datas['acc_z'][indexs].mean()    
+    lw = 0.5
+    plt.subplot(2,1,1)
+    plt.plot(acc_x.index, acc_x, linewidth = lw)
+    plt.plot(acc_y.index, acc_y, linewidth = lw)
+    plt.plot(acc_z.index, acc_z, linewidth = lw)
+    plt.subplot(2,1,2)
+    plt.plot(gy_x.index, gy_x, linewidth = lw)
+    plt.plot(gy_y.index, gy_y, linewidth = lw)
+    plt.plot(gy_z.index, gy_z, linewidth = lw)
+
+    legends = ['x','y','z']
+    legends.append('heart beat')
     if l1 != None:
         if len(x) < (central_hb+l1):
             return
-        plt.plot([x[central_hb-l1], x[central_hb+l1]], [0,0], 'k-')
-        plt.plot([x[central_hb-l1], x[central_hb+l1]], [0,0], 'wo')
-        legends.append('heart beat')
+    min_points = []
+    max_points = []
+    titles = ['Acelerometer', 'Gyroscope']
+    min_points.append(min([acc_x.min(), acc_y.min(), acc_z.min()]))
+    max_points.append(max([acc_x.max(), acc_y.max(), acc_z.max()]))
+    min_points.append(min([gy_x.min(), gy_y.min(), gy_z.min()]))
+    max_points.append(max([gy_x.max(), gy_y.max(), gy_z.max()]))
 
-    min_point = min([acc_x.min(), acc_y.min(), acc_z.min()])
-    max_point = max([acc_x.max(), acc_y.max(), acc_z.max()])
-    for hb in x[central_hb-l0:(central_hb+l0)]:
-        plt.plot([hb, hb], [min_point, max_point], 'g-')
-    plt.ylim([min_point, max_point])
-    plt.legend(legends)
+    for i in range(2):
+        plt.subplot(2,1,i+1)
+        min_point = min_points[i]
+        max_point = max_points[i]
+        if l1 != None:
+            plt.plot([x[central_hb-l1], x[central_hb+l1]], [0,0], 'k-')
+            plt.plot([x[central_hb-l1], x[central_hb+l1]], [0,0], 'wo')
+
+        for hb in x[central_hb-l0:(central_hb+l0)]:
+            plt.plot([hb, hb], [min_point, max_point], '-', color='green', linewidth = 0.5)
+        plt.ylim([min_point, max_point])
+        plt.legend(legends)
+        plt.title(titles[i])
 
 def plotSomeBeats(N, splitData):
     plt.figure()
@@ -129,8 +154,8 @@ def plotSomeBeats(N, splitData):
         while x in done_plot:
             x = int(random.random()*len(splitData))
         done_plot.append(x)
-        max_timestamp = max([max_timestamp, (splitData[x].index.max() - splitData[x].index.min()).microseconds])
-        idxs = [(idx - splitData[x].index.min()).microseconds for idx in splitData[x].index]
+        max_timestamp = max([max_timestamp, (splitData[x].index.max() - splitData[x].index.min()).microseconds/1000])
+        idxs = [(idx - splitData[x].index.min()).microseconds/1000 for idx in splitData[x].index]
         plt.plot(idxs, splitData[x]['acc_x'])
         plt.plot(idxs, splitData[x]['acc_y'])
         plt.plot(idxs, splitData[x]['acc_z'])
@@ -138,6 +163,7 @@ def plotSomeBeats(N, splitData):
     for n in range(N):
         plt.subplot(N, 1, n+1)
         plt.xlim([0, max_timestamp])
+        plt.xlabel('ms')
 
 def splitHB(x, datas, figname = ''):
     global run_keeper
@@ -196,18 +222,38 @@ def splitHB(x, datas, figname = ''):
     f_acc = f_acc[f_acc <= lim_freq]
     Pxx_den_gy = Pxx_den_gy[f_gy <= lim_freq]
     f_gy = f_gy[f_gy <= lim_freq]
+
     plt.figure()
     plt.subplot(2,1,1)
-    plt.semilogy(f_acc, Pxx_den_acc)
+    plt.semilogy(f_acc[f_acc < lim_freq], Pxx_den_acc[f_acc < lim_freq])
     plt.xlim([0,lim_freq])
-    plt.legend(welch_axis_acc)
+    plt.legend(['x','y','z'])
+    plt.xlabel('frequency (Hz)')
     plt.title('Spectral Density')
     plt.subplot(2,1,2)
-    plt.semilogy(f_gy, Pxx_den_gy)
+    plt.semilogy(f_gy[f_acc < lim_freq], Pxx_den_gy[f_acc < lim_freq])
     plt.xlim([0,lim_freq])
-    plt.legend(welch_axis_gy)
+    plt.legend(['x','y','z'])
+    plt.xlabel('frequency (Hz)')
     plt.savefig(figname + '_welch', dpi=300)
     plt.close()
+
+    lim_freq /= 5
+    plt.figure()
+    plt.subplot(2,1,1)
+    plt.semilogy(f_acc[f_acc < lim_freq], Pxx_den_acc[f_acc < lim_freq])
+    plt.xlim([0,lim_freq])
+    plt.legend(['x','y','z'])
+    plt.xlabel('frequency (Hz)')
+    plt.title('Spectral Density')
+    plt.subplot(2,1,2)
+    plt.semilogy(f_gy[f_acc < lim_freq], Pxx_den_gy[f_acc < lim_freq])
+    plt.xlim([0,lim_freq])
+    plt.legend(['x','y','z'])
+    plt.xlabel('frequency (Hz)')
+    plt.savefig(figname + '_welch_2', dpi=300)
+    plt.close()
+
 
 
     targetcolumn = 'acc_z'
@@ -251,7 +297,7 @@ def splitHB(x, datas, figname = ''):
                 resVel = np.sqrt(np.sum(np.power(vel, 2), axis=1))
                 data = pd.concat([vel, data], axis = 1)
                 splitData.append(data)
-                lengths.append(len(data))
+                lengths.append(len(data)*1/RESAMPLING_FREQ)
                 mean_accs.append(resAcc.sum()/len(data))
                 mean_vels.append(resVel.sum()/len(data))
                 max_dist.append(dist.max())
@@ -265,16 +311,17 @@ def splitHB(x, datas, figname = ''):
     plt.figure()
     plt.subplot(4,1,1)
     plt.plot(valid_indexs, np.asarray(mean_accs))
-    plt.title('mean acc')
+    plt.title('Mean accelerometer resultant per heart beat')
     plt.subplot(4,1,2)
     plt.plot(valid_indexs, np.asarray(mean_vels))
-    plt.title('mean vel')
+    plt.title('Mean velocity resultant per heart beat')
     plt.subplot(4,1,3)
     plt.plot(valid_indexs, np.asarray(max_dist))
-    plt.title('max dist')
+    plt.title('Maximum position variation per heart beat')
     plt.subplot(4,1,4)
-    plt.title('lenght')
+    plt.title('Length of heart beat')
     plt.plot(valid_indexs, np.asarray(lengths))
+    plt.ylabel('seconds')
     if figname != '':
         plt.savefig(figname + '_works')
         plt.close()
@@ -288,7 +335,6 @@ def splitHB(x, datas, figname = ''):
     indexs.append(min(starts) - datetime.timedelta(milliseconds = (1000*1/RESAMPLING_FREQ)/2))
     indexs.append(max(ends) + datetime.timedelta(milliseconds = (1000*1/RESAMPLING_FREQ)/2))
     final = pd.DataFrame(data=finalList, index=indexs).resample(str(int(1000*1/RESAMPLING_FREQ)) + "L").mean().interpolate()
-    print(final)
     PLOT_PARTIAL = False
     for data in splitData:
         N += 1
@@ -369,7 +415,6 @@ def splitHB(x, datas, figname = ''):
         plt.plot(acc_data.index, acc_data, c[c_cntr] + '-')
     columns = ["final_"+mpu for mpu in mpus[:3]]
     acc_datas = np.asarray(final[columns])
-    print(mpus[:3])
     plt.legend(['x','y','z'])
     plt.title("accelerometer")
     plt.subplot(2,1,2)
@@ -525,7 +570,7 @@ def calculatePos(accs, per, figname = '', plot = True):
     #accs = np.nan_to_num(accs)
     first_valid_index = np.where(np.isfinite(accs).all(axis=1))[0][0]
     accs = accs[first_valid_index:]
-    accs[abs(accs) < 1e-16] = 0
+    accs[accs.abs() < 1e-16] = 0
 
     pos = [0, 0, 0]
     timestamps = np.asarray(range(len(accs)))
@@ -608,10 +653,13 @@ def calculatePos(accs, per, figname = '', plot = True):
     #    ax.plot([0, acc[0]], [0,acc[1]], [0,acc[2]], 'r->')
     return [poss, vels]
 
+#@MAIN
 files = [['_test06_19_10_2017.h5',150], ['_test05_19_10_2017.h5',150], ['_test04_16_10_2017.h5',250], ['_test03_15_10_2017.h5',100], ['_test02_15_10_2017.h5',100], ['_test01_15_10_2017.h5',0]]
+files = [['_test03_15_10_2017.h5',100], ['_test02_15_10_2017.h5',100], ['_test01_15_10_2017.h5',0]]
 basefile = 'data/'
-files = [['buffer_2017-05-09_00.11.36',0, 'exercicio_old_01']]
-basefile = 'data_old/'
+#files = [['buffer_2017-05-09_00.11.36',0, 'exercicio_old_01'], ['buffer_2017-05-25_22.03.42', 0, 'normal_old_1'], ['buffer_2017-05-25_22.19.10', 0, 'normal_old_2'], ['buffer_2017-05-25_22.20.09', 0, 'normal_old_3']]
+#files = [['buffer_2017-05-09_00.11.36',0, 'exercicio_old_01']]
+basefile_old = 'data_old/'
 #files = [['_test02_15_10_2017.h5']]
 baseimg  = 'plot/'
 SPLIT_NS = [1, 5, 10]
@@ -626,20 +674,21 @@ for SPLIT_N in SPLIT_NS:
             full_result_keeper[f[0]][SPLIT_N] = {}
         keeper = full_result_keeper[f[0]][SPLIT_N]
         
-        if not 'files' in keeper:
-            if f[0][-2:] == 'h5':
-                file_type = 'h5'
-                f = [basefile + 'adc' + f[0], basefile + 'mpu' + f[0], f[1]]
-                figname = f[0].split('adc')[1].split('.')[0]
-                if figname[0] == '_':
-                    figname = figname[1:]
-            else:
-                file_type = 'old'
-                date_part = f[0].split('_',1)[1]
-                figname = f[2]
-                f = [basefile + 'bufferADC_' + date_part, basefile + f[0], f[1]]
-            print(f)
-            keeper['files'] = f
+        if f[0][-2:] == 'h5':
+            file_type = 'h5'
+            f = [basefile + 'adc' + f[0], basefile + 'mpu' + f[0], f[1]]
+            figname = f[0].split('adc')[1].split('.')[0]
+            if figname[0] == '_':
+                figname = figname[1:]
+        else:
+            if SPLIT_N > 1:
+                break
+            file_type = 'old'
+            date_part = f[0].split('_',1)[1]
+            figname = f[2]
+            f = [basefile_old + 'bufferADC_' + date_part, basefile_old + f[0], f[1]]
+        print(f)
+        keeper['files'] = f
         f = keeper['files']
 
         #------LOAD AND FIX HB DATA--------------------
@@ -647,6 +696,8 @@ for SPLIT_N in SPLIT_NS:
         figname = baseimg + figname
         if FILTER:
             figname += '_filter'
+        if FIX_ROTATION:
+            figname += '_fixrotation'
         figname += '_res' + str(RESAMPLING_FREQ)
         print('-'*100)
         print(figname)
@@ -671,7 +722,7 @@ for SPLIT_N in SPLIT_NS:
             acc_fields = ['acc_x', 'acc_y', 'acc_z']
             gy_fields = ['gy_x', 'gy_y', 'gy_z']
             if file_type == 'h5':
-                SAMPLING_FREQ = SAMPLING_FREQ
+                SAMPLING_FREQ = NEW_SAMPLING_FREQ
                 mpu = pd.read_hdf(f[1],'data').rename(columns={0:'acc_z', 1:'gy_x', 2:'gy_y', 3:'gy_z', 4:'acc_x', 5:'acc_y'}).resample(str(int(1000/SAMPLING_FREQ)) + 'L').mean().interpolate()
             else:
                 SAMPLING_FREQ = OLD_SAMPLING_FREQ
@@ -764,10 +815,8 @@ for SPLIT_N in SPLIT_NS:
             if not 'spliat' in run_keeper:
                 final = splitHB(x, data, name_file)
                 run_keeper['split'] = final
-                print(final)
             final = run_keeper['split']
             final_acc_fields = ['final_' + acc_field for acc_field in acc_fields]
-            print(final_acc_fields)
             calculatePos(final[final_acc_fields], 1/RESAMPLING_FREQ, figname = name_file + '_final')
             if not STORE_IMG:
                 plt.show()
